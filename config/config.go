@@ -6,8 +6,18 @@ import (
 )
 
 type Config struct {
-	Token             string `required:"true"`
-	WaitingRoomChatID int64  `split_words:"true" required:"true"`
+	// Bot token
+	Token string `required:"true"`
+
+	// This chat ID is for forwarding messages
+	WaitingRoomChatID int64 `split_words:"true" required:"true"`
+
+	// This chat ID is required for the exportChatInviteLink tgapi method
+	MainRoomChatID int64 `split_words:"true" required:"true"`
+
+	// set the log level. See the juju docs for more info
+	// https://github.com/juju/loggo/blob/master/level.go#L13-L21
+	LogLevel string `split_words:"true" default:"INFO"`
 }
 
 func Get() (*Config, error) {
