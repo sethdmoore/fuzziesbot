@@ -1,4 +1,4 @@
-#FuzziesBot
+# FuzziesBot
 
 A telegram bot that forwards messages from users to a waiting room
 
