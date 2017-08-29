@@ -9,6 +9,7 @@ import (
 type File struct {
 	FileID   string `json:"file_id"`
 	FileSize int    `json:"file_size"`
+	FilePath string `json:"file_path"`
 
 	// Local absolute path to file on local file system.
 	filename string
@@ -21,9 +22,7 @@ type File struct {
 // a descriptor for it.
 func NewFile(path string) (File, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return File{}, FileError{
-			fmt.Sprintf("'%s' does not exist!", path),
-		}
+		return File{}, fmt.Errorf("telebot: '%s' does not exist", path)
 	}
 
 	return File{filename: path}, nil
@@ -31,11 +30,7 @@ func NewFile(path string) (File, error) {
 
 // Exists says whether the file presents on Telegram servers or not.
 func (f File) Exists() bool {
-	if f.FileID != "" {
-		return true
-	}
-
-	return false
+	return f.FileID != ""
 }
 
 // Local returns location of file on local file system, if it's

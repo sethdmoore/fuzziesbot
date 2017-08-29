@@ -6,12 +6,18 @@ import (
 
 // Message object represents a message.
 type Message struct {
-	ID       int  `json:"message_id"`
-	Sender   User `json:"from"`
-	Unixtime int  `json:"date"`
+	ID int `json:"message_id"`
+
+	// For message sent to channels, Sender may be empty
+	Sender User `json:"from"`
+
+	Unixtime int `json:"date"`
 
 	// For forwarded messages, sender of the original message.
 	OriginalSender User `json:"forward_from"`
+
+	// For forwarded messages, chat of the original message when forwarded from a channel.
+	OriginalChat Chat `json:"forward_from_chat"`
 
 	// For forwarded messages, unixtime of the original message.
 	OriginalUnixtime int `json:"forward_date"`
@@ -47,15 +53,25 @@ type Message struct {
 	Location Location `json:"location"`
 
 	// A group chat message belongs to, empty if personal.
-	Chat User `json:"chat"`
+	Chat Chat `json:"chat"`
 
+	// XXX: 3.0 DEPRECATION
+	// works for now... but they warn that they will disable this
 	// For a service message, represents a user,
 	// that just got added to chat, this message came from.
 	//
 	// Sender leads to User, capable of invite.
 	//
 	// UserJoined might be the Bot itself.
-	UserJoined User `json:"new_chat_participant"`
+	UserJoined User `json:"new_chat_member"`
+
+	// For a service message, represents a slice users
+	// that got added to chat since last update.
+	//
+	// Sender leads to User, capable of invite.
+	//
+	// UsersJoined might contain the Bot itself.
+	UsersJoined []User `json:"new_chat_members"`
 
 	// For a service message, represents a user,
 	// that just left chat, this message came from.
@@ -64,7 +80,7 @@ type Message struct {
 	// capable of this kick.
 	//
 	// UserLeft might be the Bot itself.
-	UserLeft User `json:"left_chat_participant"`
+	UserLeft User `json:"left_chat_member"`
 
 	// For a service message, represents a new title
 	// for chat this message came from.
@@ -91,49 +107,103 @@ type Message struct {
 	//
 	// Sender would lead to creator of the chat.
 	ChatCreated bool `json:"group_chat_created"`
+
+	// For a service message, true if super group has been created.
+	//
+	// You would recieve such a message if you are one of
+	// initial group chat members.
+	//
+	// Sender would lead to creator of the chat.
+	SuperGroupCreated bool `json:"supergroup_chat_created"`
+
+	// For a service message, true if channel has been created.
+	//
+	// You would recieve such a message if you are one of
+	// initial channel administrators.
+	//
+	// Sender would lead to creator of the chat.
+	ChannelCreated bool `json:"channel_chat_created"`
+
+	// For a service message, the destination (super group) you
+	// migrated to.
+	//
+	// You would recieve such a message when your chat has migrated
+	// to a super group.
+	//
+	// Sender would lead to creator of the migration.
+	MigrateTo int64 `json:"migrate_to_chat_id"`
+
+	// For a service message, the Origin (normal group) you migrated
+	// from.
+	//
+	// You would recieve such a message when your chat has migrated
+	// to a super group.
+	//
+	// Sender would lead to creator of the migration.
+	MigrateFrom int64 `json:"migrate_from_chat_id"`
+
+	Entities []MessageEntity `json:"entities,omitempty"`
+
+	Caption string `json:"caption,omitempty"`
 }
 
 // Origin returns an origin of message: group chat / personal.
-func (m Message) Origin() User {
-	if (m.Chat != User{}) {
-		return m.Chat
-	}
+func (m *Message) Origin() User {
+	// if m.IsPersonal() {
+	// 	return m.Chat
+	// }
 
 	return m.Sender
 }
 
 // Time returns the moment of message creation in local time.
-func (m Message) Time() time.Time {
+func (m *Message) Time() time.Time {
 	return time.Unix(int64(m.Unixtime), 0)
 }
 
 // IsForwarded says whether message is forwarded copy of another
 // message or not.
-func (m Message) IsForwarded() bool {
-	if (m.OriginalSender != User{}) {
-		return true
-	}
-
-	return false
+func (m *Message) IsForwarded() bool {
+	return m.OriginalSender != User{} || m.OriginalChat != Chat{}
 }
 
 // IsReply says whether message is reply to another message or not.
-func (m Message) IsReply() bool {
-	if m.ReplyTo != nil {
-		return true
+func (m *Message) IsReply() bool {
+	return m.ReplyTo != nil
+}
+
+// IsCommand parses the first entity and tests for a command
+func (m *Message) IsCommand() bool {
+	if len(m.Entities) == 0 {
+		return false
 	}
 
+	e := m.Entities[0]
+
+	if e.Type == EntityCommand {
+		return true
+	}
+	return false
+}
+
+// ContainsCommand tests a message's entities for a command in any index.
+func (m *Message) ContainsCommand() bool {
+	if len(m.Entities) == 0 {
+		return false
+	}
+
+	for _, e := range m.Entities {
+		if e.Type == EntityCommand {
+			return true
+		}
+	}
 	return false
 }
 
 // IsPersonal returns true, if message is a personal message,
 // returns false if sent to group chat.
-func (m Message) IsPersonal() bool {
-	if (m.Chat != User{}) {
-		return true
-	}
-
-	return false
+func (m *Message) IsPersonal() bool {
+	return !m.Chat.IsGroupChat()
 }
 
 // IsService returns true, if message is a service message,
@@ -142,7 +212,7 @@ func (m Message) IsPersonal() bool {
 // Service messages are automatically sent messages, which
 // typically occur on some global action. For instance, when
 // anyone leaves the chat or chat title changes.
-func (m Message) IsService() bool {
+func (m *Message) IsService() bool {
 	service := false
 
 	if (m.UserJoined != User{}) {

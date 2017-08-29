@@ -39,7 +39,6 @@ func HandleGeneral(m telebot.Message, bot *telebot.Bot, c *config.Config) error 
 	var dest telebot.Chat
 	if m.ContainsCommand() {
 		log.Debugf("Received command!")
-
 	} else if m.Chat.ID == c.WaitingRoomChatID {
 		log.Debugf("Message does not need to be handled.")
 		log.Tracef(spew.Sdump(m))

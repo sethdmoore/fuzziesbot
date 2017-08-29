@@ -8,22 +8,26 @@ import (
 	"io/ioutil"
 	"mime/multipart"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 )
 
-func sendCommand(method string, token string, params url.Values) ([]byte, error) {
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/%s?%s",
-		token, method, params.Encode())
+func (u *Bot) SendCommand(method string, payload interface{}) ([]byte, error) {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/%s",
+		u.Token, method)
 
-	resp, err := http.Get(url)
-	if err != nil {
+	var b bytes.Buffer
+	if err := json.NewEncoder(&b).Encode(payload); err != nil {
 		return []byte{}, err
 	}
 
+	resp, err := u.Client.Post(url, "application/json", &b)
+	if err != nil {
+		return []byte{}, err
+	}
 	defer resp.Body.Close()
+
 	json, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return []byte{}, err
@@ -32,7 +36,7 @@ func sendCommand(method string, token string, params url.Values) ([]byte, error)
 	return json, nil
 }
 
-func sendFile(method, token, name, path string, params url.Values) ([]byte, error) {
+func (u *Bot) sendFile(method, name, path string, params map[string]string) ([]byte, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return []byte{}, err
@@ -50,17 +54,17 @@ func sendFile(method, token, name, path string, params url.Values) ([]byte, erro
 		return []byte{}, err
 	}
 
-	for field, values := range params {
-		if len(values) > 0 {
-			writer.WriteField(field, values[0])
-		}
+	for field, value := range params {
+		writer.WriteField(field, value)
 	}
 
 	if err = writer.Close(); err != nil {
 		return []byte{}, err
 	}
 
-	url := fmt.Sprintf("https://api.telegram.org/bot%s/%s", token, method)
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/%s",
+		u.Token, method)
+
 	req, err := http.NewRequest("POST", url, body)
 	if err != nil {
 		return []byte{}, err
@@ -68,10 +72,13 @@ func sendFile(method, token, name, path string, params url.Values) ([]byte, erro
 
 	req.Header.Add("Content-Type", writer.FormDataContentType())
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := u.Client.Do(req)
 	if err != nil {
 		return []byte{}, err
+	}
+
+	if resp.StatusCode == http.StatusInternalServerError {
+		return []byte{}, fmt.Errorf("telegram: internal server error")
 	}
 
 	json, err := ioutil.ReadAll(resp.Body)
@@ -82,27 +89,42 @@ func sendFile(method, token, name, path string, params url.Values) ([]byte, erro
 	return json, nil
 }
 
-func embedSendOptions(params *url.Values, options *SendOptions) {
-	if params == nil || options == nil {
+func embedSendOptions(params map[string]string, options *SendOptions) {
+	if options == nil {
 		return
 	}
 
 	if options.ReplyTo.ID != 0 {
-		params.Set("reply_to_message_id", strconv.Itoa(options.ReplyTo.ID))
+		params["reply_to_message_id"] = strconv.Itoa(options.ReplyTo.ID)
 	}
 
 	if options.DisableWebPagePreview {
-		params.Set("disable_web_page_preview", "true")
+		params["disable_web_page_preview"] = "true"
 	}
 
-	if options.ForceReply.Require {
-		forceReply, _ := json.Marshal(options.ForceReply)
-		params.Set("reply_markup", string(forceReply))
+	if options.DisableNotification {
+		params["disable_notification"] = "true"
+	}
+
+	if options.ParseMode != ModeDefault {
+		params["parse_mode"] = string(options.ParseMode)
+	}
+
+	// Processing force_reply:
+	{
+		forceReply := options.ReplyMarkup.ForceReply
+		customKeyboard := (options.ReplyMarkup.CustomKeyboard != nil)
+		inlineKeyboard := options.ReplyMarkup.InlineKeyboard != nil
+		hiddenKeyboard := options.ReplyMarkup.HideCustomKeyboard
+		if forceReply || customKeyboard || hiddenKeyboard || inlineKeyboard {
+			replyMarkup, _ := json.Marshal(options.ReplyMarkup)
+			params["reply_markup"] = string(replyMarkup)
+		}
 	}
 }
 
-func getMe(token string) (User, error) {
-	meJSON, err := sendCommand("getMe", token, url.Values{})
+func (u *Bot) getMe(token string) (User, error) {
+	meJSON, err := u.SendCommand("getMe", nil)
 	if err != nil {
 		return User{}, err
 	}
@@ -115,22 +137,24 @@ func getMe(token string) (User, error) {
 
 	err = json.Unmarshal(meJSON, &botInfo)
 	if err != nil {
-		return User{}, AuthError{"invalid token"}
+		return User{}, fmt.Errorf("telebot: invalid token")
 	}
 
 	if botInfo.Ok {
 		return botInfo.Result, nil
 	}
 
-	return User{}, AuthError{botInfo.Description}
+	return User{}, fmt.Errorf("telebot: %s", botInfo.Description)
 }
 
-func getUpdates(token string, offset int, updates chan<- Update) error {
-	params := url.Values{}
-	params.Set("offset", strconv.Itoa(offset))
-	updatesJSON, err := sendCommand("getUpdates", token, params)
+func (u *Bot) getUpdates(token string, offset, timeout int64) (upd []Update, err error) {
+	params := map[string]string{
+		"offset":  strconv.FormatInt(offset, 10),
+		"timeout": strconv.FormatInt(timeout, 10),
+	}
+	updatesJSON, err := u.SendCommand("getUpdates", params)
 	if err != nil {
-		return err
+		return
 	}
 
 	var updatesRecieved struct {
@@ -141,16 +165,13 @@ func getUpdates(token string, offset int, updates chan<- Update) error {
 
 	err = json.Unmarshal(updatesJSON, &updatesRecieved)
 	if err != nil {
-		return err
+		return
 	}
 
 	if !updatesRecieved.Ok {
-		return FetchError{updatesRecieved.Description}
+		err = fmt.Errorf("telebot: %s", updatesRecieved.Description)
+		return
 	}
 
-	for _, update := range updatesRecieved.Result {
-		updates <- update
-	}
-
-	return nil
+	return updatesRecieved.Result, nil
 }

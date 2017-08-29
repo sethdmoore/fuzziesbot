@@ -2,6 +2,7 @@ package telebot
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"testing"
 )
@@ -26,6 +27,13 @@ func TestBot(t *testing.T) {
 	}
 }
 
+func TestRecipient(_ *testing.T) {
+	bot := Bot{Client: &http.Client{}}
+
+	bot.SendMessage(User{}, "", nil)
+	bot.SendMessage(Chat{}, "", nil)
+}
+
 func TestFile(t *testing.T) {
 	file, err := NewFile("telebot.go")
 	if err != nil {
@@ -47,17 +55,19 @@ func TestFile(t *testing.T) {
 	}
 }
 
-func TestUser(t *testing.T) {
-	user := User{Title: "bazinga"}
+func TestChat(t *testing.T) {
+	user := Chat{Type: "group", Title: "bazinga"}
 
-	// According to API, user object with non-empty Title is a group chat.
+	// According to API, chat object with group Type is a group chat.
 	if !user.IsGroupChat() {
-		t.Fatal("Can't tell users/bots and group chats apart!")
+		t.Fatal("Can't tell private and group chats apart!")
 	}
 
 	// Reverse.
 	user.Title = ""
+	user.Type = "private"
+
 	if user.IsGroupChat() {
-		t.Fatal("Can't tell users/bots and group chats apart!")
+		t.Fatal("Can't tell private and group chats apart!")
 	}
 }

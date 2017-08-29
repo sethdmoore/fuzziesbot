@@ -20,14 +20,20 @@
   version = "v1.3.0"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/mitchellh/hashstructure"
+  packages = ["."]
+  revision = "2bca23e0e452137f789efbc8610126fd8b94f73b"
+
+[[projects]]
+  branch = "master"
   name = "github.com/sethdmoore/telebot"
   packages = ["."]
-  revision = "40c91ee0b4c635ca2f520c54617306092cabb845"
-  version = "v1.0"
+  revision = "2ee5b19eb6e70e6ab01512c13cc1dda52d3c9073"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "1b8d9ff25016a74f422667473d238f9cb83e8a1fc713d7562395a1c1719c5521"
+  inputs-digest = "aa041980852b4110194d0187d4f06913ad397815e0d9351c8b0b6c5fac6de3aa"
   solver-name = "gps-cdcl"
   solver-version = 1
