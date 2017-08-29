@@ -11,5 +11,5 @@ export FB_DEFAULT_TIMEOUT='300'
 ```
 
 ## To do
-[] Rate limit forwarding from a particular user
-* [] block people that spam bot
+[ ] Rate limit forwarding from a particular user
+* [ ] block people that spam bot
